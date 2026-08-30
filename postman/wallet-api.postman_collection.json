@@ -1,0 +1,2263 @@
+{
+  "info": {
+    "name": "Multi-tenant Wallet API — QA (placeholders)",
+    "description": "Колекція під кейси з TEST-CASES.md: коди відповідей, JSON-схеми, ідемпотентність.\n\nУВАГА: усі endpoint-и, поля payload і схеми — ПЛЕЙСХОЛДЕРИ.\nЗамініть їх реальними контрактами перед прогоном. Див. postman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Helper available to every request: builds a signed callback payload.",
+          "// Usage in a request pre-request script:",
+          "//   signPayload('deposit', { ... }, 'pspSecret');",
+          "// It stores <name>Payload and <name>Signature as collection variables,",
+          "// so a repeat request can reuse the byte-identical body and signature.",
+          "globalThis.signPayload = function (name, payload, secretVar) {",
+          "  const raw = JSON.stringify(payload);",
+          "  const secret = pm.collectionVariables.get(secretVar) || '';",
+          "  pm.collectionVariables.set(name + 'Payload', raw);",
+          "  pm.collectionVariables.set(name + 'Signature', CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex));",
+          "  return raw;",
+          "};",
+          "",
+          "globalThis.uid = function (prefix) {",
+          "  return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);",
+          "};"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Глобальна перевірка для всіх запитів колекції.",
+          "pm.test('No 5xx', function () {",
+          "  pm.expect(pm.response.code, 'server error').to.be.below(500);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.staging.example.com",
+      "type": "string"
+    },
+    {
+      "key": "tenantA",
+      "value": "tenant-a",
+      "type": "string"
+    },
+    {
+      "key": "tenantB",
+      "value": "tenant-b",
+      "type": "string"
+    },
+    {
+      "key": "tenantAToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tenantBToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userEmail",
+      "value": "qa.user@example.com",
+      "type": "string"
+    },
+    {
+      "key": "userPassword",
+      "value": "Str0ng-P@ssw0rd",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "user-a-001",
+      "type": "string"
+    },
+    {
+      "key": "tenantBUserId",
+      "value": "user-b-001",
+      "type": "string"
+    },
+    {
+      "key": "pspSecret",
+      "value": "psp-shared-secret",
+      "type": "string"
+    },
+    {
+      "key": "gspSecret",
+      "value": "gsp-shared-secret",
+      "type": "string"
+    },
+    {
+      "key": "pspMerchantId",
+      "value": "merchant-a-001",
+      "type": "string"
+    },
+    {
+      "key": "pendingDepositTxId",
+      "value": "psp-pending-001",
+      "type": "string"
+    },
+    {
+      "key": "tenantBDepositTxId",
+      "value": "psp-tenant-b-001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Identity",
+      "description": "TC-01 … TC-06 — реєстрація, логін, tenant isolation на рівні token.",
+      "item": [
+        {
+          "name": "TC-01 — Успішна реєстрація",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('newUserEmail', uid('qa') + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const userSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"id\",",
+                  "    \"email\",",
+                  "    \"tenantId\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"id\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    },",
+                  "    \"email\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"tenantId\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    }",
+                  "  },",
+                  "  \"not\": {",
+                  "    \"required\": [",
+                  "      \"password\"",
+                  "    ]",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches userSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(userSchema);",
+                  "});",
+                  "pm.test('User is bound to Tenant A', function () {",
+                  "  pm.expect(String(pm.response.json().tenantId)).to.eql(pm.collectionVariables.get('tenantA'));",
+                  "});",
+                  "pm.test('No secrets or stack traces in response', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/password|passwordHash|secret|stack|at .*\\\\(.*:\\\\d+:\\\\d+\\\\)/i);",
+                  "});",
+                  "pm.collectionVariables.set('existingEmail', pm.collectionVariables.get('newUserEmail'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"tenantId\": \"{{tenantA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-02 — Реєстрація з невалідними даними",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 400/422', function () {",
+                  "  pm.expect([400, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const errorSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"error\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"error\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"message\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"details\": {",
+                  "      \"type\": \"array\"",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches errorSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(errorSchema);",
+                  "});",
+                  "pm.test('Validation errors are described', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(JSON.stringify(b)).to.match(/email|password|validation/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"123\",\n  \"tenantId\": \"{{tenantA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-03 — Повторна реєстрація того самого користувача",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Той самий email, але у верхньому регістрі та з пробілами —",
+                  "// uniqueness rule не має обходитись нормалізацією.",
+                  "const e = pm.collectionVariables.get('existingEmail') || 'qa@example.com';",
+                  "pm.collectionVariables.set('existingEmailUpper', ' ' + e.toUpperCase() + ' ');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 409/400/422', function () {",
+                  "  pm.expect([409, 400, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const errorSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"error\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"error\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"message\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"details\": {",
+                  "      \"type\": \"array\"",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches errorSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(errorSchema);",
+                  "});",
+                  "pm.test('Second user is not created (conflict, not 2xx)', function () {",
+                  "  pm.expect(pm.response.code).to.be.at.least(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{existingEmailUpper}}\",\n  \"password\": \"{{userPassword}}\",\n  \"tenantId\": \"{{tenantA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-04 — Успішний логін",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const tokenSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"token\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"token\": {",
+                  "      \"type\": \"string\",",
+                  "      \"minLength\": 1",
+                  "    },",
+                  "    \"expiresIn\": {",
+                  "      \"type\": [",
+                  "        \"integer\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    },",
+                  "    \"user\": {",
+                  "      \"type\": \"object\",",
+                  "      \"required\": [",
+                  "        \"id\",",
+                  "        \"tenantId\"",
+                  "      ],",
+                  "      \"properties\": {",
+                  "        \"id\": {",
+                  "          \"type\": [",
+                  "            \"string\",",
+                  "            \"integer\"",
+                  "          ]",
+                  "        },",
+                  "        \"tenantId\": {",
+                  "          \"type\": [",
+                  "            \"string\",",
+                  "            \"integer\"",
+                  "          ]",
+                  "        }",
+                  "      }",
+                  "    }",
+                  "  },",
+                  "  \"not\": {",
+                  "    \"required\": [",
+                  "      \"password\"",
+                  "    ]",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches tokenSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(tokenSchema);",
+                  "});",
+                  "pm.test('No secrets or stack traces in response', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/password|passwordHash|secret|stack|at .*\\\\(.*:\\\\d+:\\\\d+\\\\)/i);",
+                  "});",
+                  "pm.test('Token saved for later requests', function () {",
+                  "  const t = pm.response.json().token;",
+                  "  pm.expect(t).to.be.a('string').and.not.empty;",
+                  "  pm.collectionVariables.set('tenantAToken', t);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"tenantId\": \"{{tenantA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-05 — Логін із неправильним паролем",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 401', function () {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const errorSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"error\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"error\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"message\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"details\": {",
+                  "      \"type\": \"array\"",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches errorSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(errorSchema);",
+                  "});",
+                  "pm.test('No token is issued', function () {",
+                  "  pm.expect(pm.response.json()).to.not.have.property('token');",
+                  "});",
+                  "pm.test('Response does not confirm whether the email exists', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/not found|no such user|unknown email|user does not exist/i);",
+                  "});",
+                  "// TC-05 (user enumeration): порівняти цю відповідь із логіном неіснуючого email —",
+                  "// статус, тіло і час обробки мають збігатися. Див. запит нижче."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"definitely-wrong-password\",\n  \"tenantId\": \"{{tenantA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-05a — Логін неіснуючого email (enumeration check)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('missingEmail', uid('nobody') + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 401', function () {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "pm.test('Same generic error as for an existing email (no enumeration)', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/not found|no such user|unknown email|user does not exist/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{missingEmail}}\",\n  \"password\": \"definitely-wrong-password\",\n  \"tenantId\": \"{{tenantA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-06 — Token Tenant A використовується в Tenant B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 401/403/404', function () {",
+                  "  pm.expect([401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('No Tenant B data is returned', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(pm.response.code).to.not.eql(200);",
+                  "  pm.expect(raw).to.not.include(pm.collectionVariables.get('tenantB') + '-user');",
+                  "});",
+                  "pm.test('Tenant ID from token cannot be overridden by a header', function () {",
+                  "  pm.expect(pm.response.code).to.be.at.least(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAToken}}"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{tenantB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. PSP deposit callback",
+      "description": "TC-07 … TC-12 — підпис, contract, amount/currency, tenant isolation.",
+      "item": [
+        {
+          "name": "TC-07 — Успішний deposit callback",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const txId = uid('psp');",
+                  "pm.collectionVariables.set('depositTxId', txId);",
+                  "signPayload('deposit', {",
+                  "  transactionId: txId,",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('userId'),",
+                  "  amount: '100.00',",
+                  "  currency: 'EUR',",
+                  "  status: 'success'",
+                  "}, 'pspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const callbackAckSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"status\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"status\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"transactionId\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    },",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches callbackAckSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(callbackAckSchema);",
+                  "});",
+                  "pm.test('Deposit is acknowledged as accepted', function () {",
+                  "  pm.expect(String(pm.response.json().status)).to.match(/ok|success|accepted|completed/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{depositSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{depositPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-08 — Callback з неправильним підписом",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Підписуємо один payload, а надсилаємо змінений.",
+                  "const txId = uid('psp-tampered');",
+                  "signPayload('tampered', {",
+                  "  transactionId: txId,",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('userId'),",
+                  "  amount: '100.00',",
+                  "  currency: 'EUR',",
+                  "  status: 'success'",
+                  "}, 'pspSecret');",
+                  "pm.collectionVariables.set('badSignature', pm.collectionVariables.get('tamperedSignature'));",
+                  "// amount підмінено після підписання:",
+                  "pm.collectionVariables.set('tamperedPayload', pm.collectionVariables.get('tamperedPayload').replace('\"100.00\"', '\"9999.00\"'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 400/401/403', function () {",
+                  "  pm.expect([400, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Rejected — signature must be verified', function () {",
+                  "  pm.expect(pm.response.code).to.be.at.least(400);",
+                  "});",
+                  "pm.test('No secrets or stack traces in response', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/password|passwordHash|secret|stack|at .*\\\\(.*:\\\\d+:\\\\d+\\\\)/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{badSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{tamperedPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-09 — Невідомий PSP transaction ID",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "signPayload('unknown', {",
+                  "  transactionId: uid('does-not-exist'),",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('userId'),",
+                  "  amount: '100.00',",
+                  "  currency: 'EUR',",
+                  "  status: 'success'",
+                  "}, 'pspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/400/404/422', function () {",
+                  "  pm.expect([200, 400, 404, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('No 5xx — unknown transaction is a defined contract response', function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test('No secrets or stack traces in response', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/password|passwordHash|secret|stack|at .*\\\\(.*:\\\\d+:\\\\d+\\\\)/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{unknownSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{unknownPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-10 — Amount або currency не відповідає deposit",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Транзакція створена на 100.00 EUR, callback приходить на 1000.00 USD.",
+                  "signPayload('mismatch', {",
+                  "  transactionId: pm.collectionVariables.get('pendingDepositTxId'),",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('userId'),",
+                  "  amount: '1000.00',",
+                  "  currency: 'USD',",
+                  "  status: 'success'",
+                  "}, 'pspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 400/409/422', function () {",
+                  "  pm.expect([400, 409, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Mismatch is rejected or parked for manual review, never silently credited', function () {",
+                  "  pm.expect(pm.response.code).to.be.at.least(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{mismatchSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{mismatchPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-11 — Failed deposit callback",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "signPayload('failed', {",
+                  "  transactionId: uid('psp-failed'),",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('userId'),",
+                  "  amount: '100.00',",
+                  "  currency: 'EUR',",
+                  "  status: 'failed',",
+                  "  declineReason: 'insufficient_funds'",
+                  "}, 'pspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const callbackAckSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"status\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"status\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"transactionId\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    },",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches callbackAckSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(callbackAckSchema);",
+                  "});",
+                  "pm.test('No secrets or stack traces in response', function () {",
+                  "  const raw = pm.response.text();",
+                  "  pm.expect(raw).to.not.match(/password|passwordHash|secret|stack|at .*\\\\(.*:\\\\d+:\\\\d+\\\\)/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{failedSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{failedPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-12 — PSP callback Tenant A для транзакції Tenant B",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Підписано секретом Tenant A, але transaction/user належать Tenant B.",
+                  "signPayload('cross', {",
+                  "  transactionId: pm.collectionVariables.get('tenantBDepositTxId'),",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('tenantBUserId'),",
+                  "  amount: '100.00',",
+                  "  currency: 'EUR',",
+                  "  status: 'success'",
+                  "}, 'pspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 400/401/403/404', function () {",
+                  "  pm.expect([400, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Cross-tenant callback is rejected', function () {",
+                  "  pm.expect(pm.response.code).to.be.at.least(400);",
+                  "});",
+                  "pm.test('Tenant B data is not disclosed', function () {",
+                  "  pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get('tenantBUserId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{crossSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{crossPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. GSP bet/win callbacks",
+      "description": "TC-13 … TC-17 — bet/win, недостатній баланс, зв’язок win із round, tenant isolation.",
+      "item": [
+        {
+          "name": "TC-13 — Успішний bet callback",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const txId = uid('bet');",
+                  "const roundId = uid('round');",
+                  "pm.collectionVariables.set('betTxId', txId);",
+                  "pm.collectionVariables.set('roundId', roundId);",
+                  "signPayload('bet', {",
+                  "  transactionId: txId,",
+                  "  roundId: roundId,",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('userId'),",
+                  "  amount: '20.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const callbackAckSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"status\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"status\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"transactionId\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    },",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches callbackAckSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(callbackAckSchema);",
+                  "});",
+                  "pm.test('Balance is returned and is not negative', function () {",
+                  "  const b = pm.response.json().balance;",
+                  "  if (b !== undefined) { pm.expect(Number(b)).to.be.at.least(0); }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{betSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{betPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/bet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "bet"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-14 — Bet при недостатньому балансі",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "signPayload('bigBet', {",
+                  "  transactionId: uid('bet-too-big'),",
+                  "  roundId: uid('round'),",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('userId'),",
+                  "  amount: '999999.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/400/402/409/422', function () {",
+                  "  pm.expect([200, 400, 402, 409, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "pm.test('Provider-specific insufficient funds is returned', function () {",
+                  "  pm.expect(pm.response.text()).to.match(/insufficient|not enough|balance/i);",
+                  "});",
+                  "pm.test('Balance never goes negative', function () {",
+                  "  const b = pm.response.json().balance;",
+                  "  if (b !== undefined) { pm.expect(Number(b)).to.be.at.least(0); }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{bigBetSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{bigBetPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/bet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "bet"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-15 — Успішний win callback",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const txId = uid('win');",
+                  "pm.collectionVariables.set('winTxId', txId);",
+                  "signPayload('win', {",
+                  "  transactionId: txId,",
+                  "  betTransactionId: pm.collectionVariables.get('betTxId'),",
+                  "  roundId: pm.collectionVariables.get('roundId'),",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('userId'),",
+                  "  amount: '50.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const callbackAckSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"status\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"status\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"transactionId\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    },",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches callbackAckSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(callbackAckSchema);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{winSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{winPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/win",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "win"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-16 — Win для невідомого bet або round",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "signPayload('orphanWin', {",
+                  "  transactionId: uid('win-orphan'),",
+                  "  betTransactionId: uid('bet-does-not-exist'),",
+                  "  roundId: uid('round-does-not-exist'),",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('userId'),",
+                  "  amount: '50.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/400/404/409/422', function () {",
+                  "  pm.expect([200, 400, 404, 409, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('No 5xx — defined policy (reject or pending reconciliation)', function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "// Якщо політика — reject, очікується 4xx.",
+                  "// Якщо pending reconciliation — 2xx зі статусом pending і без зміни балансу.",
+                  "// Звузьте очікування нижче під фактичні вимоги."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{orphanWinSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{orphanWinPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/win",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "win"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-17 — GSP callback Tenant A містить користувача Tenant B",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "signPayload('crossBet', {",
+                  "  transactionId: uid('bet-cross'),",
+                  "  roundId: uid('round'),",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('tenantBUserId'),",
+                  "  amount: '20.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 400/401/403/404', function () {",
+                  "  pm.expect([400, 401, 403, 404]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Cross-tenant player is rejected', function () {",
+                  "  pm.expect(pm.response.code).to.be.at.least(400);",
+                  "});",
+                  "pm.test('Tenant B player data is not disclosed', function () {",
+                  "  pm.expect(pm.response.text()).to.not.include(pm.collectionVariables.get('tenantBUserId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{crossBetSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{crossBetPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/bet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "bet"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Idempotency",
+      "description": "TC-18 … TC-20. Запити виконуються ПО ПОРЯДКУ — перевіряється, що баланс\nзмінюється рівно один раз попри повторні callbacks.\n\nTC-20 (паралельні дублікати) Postman послідовно відтворити не може —\nдив. postman/README.md, розділ «Паралельні дублікати».",
+      "item": [
+        {
+          "name": "TC-18.1 — Баланс до deposit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const balanceSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"balance\",",
+                  "    \"currency\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    },",
+                  "    \"currency\": {",
+                  "      \"type\": \"string\",",
+                  "      \"minLength\": 3,",
+                  "      \"maxLength\": 3",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches balanceSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(balanceSchema);",
+                  "});",
+                  "pm.collectionVariables.set('balanceBefore', String(pm.response.json().balance));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-18.2 — Deposit callback (перший)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Payload і підпис зберігаються у змінних, щоб повторний запит",
+                  "// надіслав байт-у-байт те саме тіло.",
+                  "const txId = uid('psp-idem');",
+                  "pm.collectionVariables.set('idemDepositTxId', txId);",
+                  "signPayload('idemDeposit', {",
+                  "  transactionId: txId,",
+                  "  merchantId: pm.collectionVariables.get('pspMerchantId'),",
+                  "  userId: pm.collectionVariables.get('userId'),",
+                  "  amount: '100.00',",
+                  "  currency: 'EUR',",
+                  "  status: 'success'",
+                  "}, 'pspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const callbackAckSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"status\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"status\": {",
+                  "      \"type\": \"string\"",
+                  "    },",
+                  "    \"transactionId\": {",
+                  "      \"type\": [",
+                  "        \"string\",",
+                  "        \"integer\"",
+                  "      ]",
+                  "    },",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches callbackAckSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(callbackAckSchema);",
+                  "});",
+                  "pm.collectionVariables.set('firstAckBody', pm.response.text());",
+                  "pm.collectionVariables.set('firstAckCode', String(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{idemDepositSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{idemDepositPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-18.3 — Deposit callback (повтор, той самий payload)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Repeat is not a 5xx and not a fresh 201', function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test('Repeat returns the same or an idempotent response', function () {",
+                  "  pm.expect(String(pm.response.code)).to.eql(pm.collectionVariables.get('firstAckCode'));",
+                  "});",
+                  "pm.test('Response body is unchanged for the duplicate', function () {",
+                  "  pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('firstAckBody'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{idemDepositSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{idemDepositPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/psp/deposit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "psp",
+                "deposit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-18.4 — Баланс після повтору (має змінитись один раз)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const balanceSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"balance\",",
+                  "    \"currency\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    },",
+                  "    \"currency\": {",
+                  "      \"type\": \"string\",",
+                  "      \"minLength\": 3,",
+                  "      \"maxLength\": 3",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches balanceSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(balanceSchema);",
+                  "});",
+                  "pm.test('Balance changed exactly once (+100.00)', function () {",
+                  "  const before = Number(pm.collectionVariables.get('balanceBefore'));",
+                  "  const after = Number(pm.response.json().balance);",
+                  "  pm.expect(Number((after - before).toFixed(2))).to.eql(100);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-19.1 — Bet callback (перший)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const txId = uid('bet-idem');",
+                  "const roundId = uid('round-idem');",
+                  "pm.collectionVariables.set('idemBetTxId', txId);",
+                  "pm.collectionVariables.set('idemRoundId', roundId);",
+                  "signPayload('idemBet', {",
+                  "  transactionId: txId,",
+                  "  roundId: roundId,",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('userId'),",
+                  "  amount: '20.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');",
+                  "// знімок балансу перед серією bet/win",
+                  "pm.collectionVariables.set('balanceBeforeRound', pm.collectionVariables.get('balanceAfterDeposit') || '');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "pm.collectionVariables.set('firstBetBody', pm.response.text());",
+                  "pm.collectionVariables.set('firstBetCode', String(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{idemBetSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{idemBetPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/bet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "bet"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-19.2 — Bet callback (повтор)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Repeat is handled idempotently', function () {",
+                  "  pm.expect(String(pm.response.code)).to.eql(pm.collectionVariables.get('firstBetCode'));",
+                  "  pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('firstBetBody'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{idemBetSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{idemBetPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/bet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "bet"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-19.3 — Win callback (перший)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const txId = uid('win-idem');",
+                  "pm.collectionVariables.set('idemWinTxId', txId);",
+                  "signPayload('idemWin', {",
+                  "  transactionId: txId,",
+                  "  betTransactionId: pm.collectionVariables.get('idemBetTxId'),",
+                  "  roundId: pm.collectionVariables.get('idemRoundId'),",
+                  "  gameId: 'game-001',",
+                  "  playerId: pm.collectionVariables.get('userId'),",
+                  "  amount: '50.00',",
+                  "  currency: 'EUR'",
+                  "}, 'gspSecret');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200/201', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "pm.collectionVariables.set('firstWinBody', pm.response.text());",
+                  "pm.collectionVariables.set('firstWinCode', String(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{idemWinSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{idemWinPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/win",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "win"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-19.4 — Win callback (повтор)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Repeat is handled idempotently', function () {",
+                  "  pm.expect(String(pm.response.code)).to.eql(pm.collectionVariables.get('firstWinCode'));",
+                  "  pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('firstWinBody'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "{{idemWinSignature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{idemWinPayload}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/callbacks/gsp/win",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callbacks",
+                "gsp",
+                "win"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-19.5 — Підсумковий баланс (bet -20.00, win +50.00, разом +30.00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is one of 200', function () {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Response is JSON', function () {",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "const balanceSchema = {",
+                  "  \"type\": \"object\",",
+                  "  \"required\": [",
+                  "    \"balance\",",
+                  "    \"currency\"",
+                  "  ],",
+                  "  \"properties\": {",
+                  "    \"balance\": {",
+                  "      \"type\": [",
+                  "        \"number\",",
+                  "        \"string\"",
+                  "      ]",
+                  "    },",
+                  "    \"currency\": {",
+                  "      \"type\": \"string\",",
+                  "      \"minLength\": 3,",
+                  "      \"maxLength\": 3",
+                  "    }",
+                  "  }",
+                  "};",
+                  "pm.test('Body matches balanceSchema', function () {",
+                  "  pm.response.to.have.jsonSchema(balanceSchema);",
+                  "});",
+                  "pm.test('Bet debited once and win credited once', function () {",
+                  "  const before = Number(pm.collectionVariables.get('balanceBefore'));",
+                  "  const after = Number(pm.response.json().balance);",
+                  "  // +100 deposit, -20 bet, +50 win = +130 відносно стартового знімка",
+                  "  pm.expect(Number((after - before).toFixed(2))).to.eql(130);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tenantAToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "balance"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
