@@ -1,4 +1,6 @@
-Мета
+# Тест-план
+
+## Мета
 
 Перевірити критичні інтеграційні потоки:
 
@@ -7,66 +9,66 @@
 - bet/win callbacks від GSP;
 - повторну обробку callbacks;
 - ізоляцію даних між тенантами;
-- коректність фінансових операцій і балансу
+- коректність фінансових операцій і балансу.
 
-Scope:
+## Scope
 
-authentication та authorization;
-визначення tenant за token/header/domain/provider configuration;
-перевірка callback signature;
-відповідність callback правильному tenant;
-atomic wallet operations;
-idempotency;
-послідовність bet → win;
-audit logs та HTTP responses.
+- authentication та authorization;
+- визначення tenant за token/header/domain/provider configuration;
+- перевірка callback signature;
+- відповідність callback правильному tenant;
+- atomic wallet operations;
+- idempotency;
+- послідовність bet → win;
+- audit logs та HTTP responses.
 
-In-scope
+## In-scope
 
-Identity
+### Identity
 
-- реєстрація користувача (логін, валідація обов’язкових полів, унікальність користувача всередині системи)
-- tenant binding
-- невалідні credentials
-- недійсний, прострочений та токен іншого тенанту
+- реєстрація користувача (логін, валідація обов’язкових полів, унікальність користувача всередині системи);
+- tenant binding;
+- невалідні credentials;
+- недійсний, прострочений та токен іншого тенанту.
 
-PSP deposit callback
+### PSP deposit callback
 
-успішний deposit callback;
-перевірка підпису;
-перевірка merchant/provider configuration;
-пошук користувача і транзакції;
-статуси success/failed;
-відповідність amount/currency;
-оновлення wallet/ledger;
-повторні та паралельні callbacks;
-rollback у разі внутрішньої помилки;
-tenant isolation.
+- успішний deposit callback;
+- перевірка підпису;
+- перевірка merchant/provider configuration;
+- пошук користувача і транзакції;
+- статуси success/failed;
+- відповідність amount/currency;
+- оновлення wallet/ledger;
+- повторні та паралельні callbacks;
+- rollback у разі внутрішньої помилки;
+- tenant isolation.
 
-GSP bet/win callbacks
+### GSP bet/win callbacks
 
-успішний bet;
-недостатній баланс;
-успішний win;
-зв’язок win з bet/round;
-порядок callbacks;
-перевірка signature і provider configuration;
-повторні та паралельні callbacks;
-tenant isolation;
-точність фінансових розрахунків.
+- успішний bet;
+- недостатній баланс;
+- успішний win;
+- зв’язок win з bet/round;
+- порядок callbacks;
+- перевірка signature і provider configuration;
+- повторні та паралельні callbacks;
+- tenant isolation;
+- точність фінансових розрахунків.
 
-Out-of-scope
+## Out-of-scope
 
-- UI/UX, верстка та адаптивність
-- тестування реальних платіжних карток
-- повна перевірка систем PSP/GSP
-- penetration testing і DDoS
-- security testing логін форми
-- навантажувальне тестування
-- KYC/AML та responsible-gaming правила
-- бонуси, jackpot, cashout/refund/rollback, якщо вони не входять в окремі вимоги
-- перевірка математичної моделі гри або RTP
+- UI/UX, верстка та адаптивність;
+- тестування реальних платіжних карток;
+- повна перевірка систем PSP/GSP;
+- penetration testing і DDoS;
+- security testing логін форми;
+- навантажувальне тестування;
+- KYC/AML та responsible-gaming правила;
+- бонуси, jackpot, cashout/refund/rollback, якщо вони не входять в окремі вимоги;
+- перевірка математичної моделі гри або RTP.
 
-# Ризик-матриця
+## Ризик-матриця
 
 | Ризик | Ймовірність | Вплив | Рівень | Основна перевірка |
 | --- | --- | --- | --- | --- |
@@ -90,4 +92,3 @@ Out-of-scope
 | Чутливі дані потрапляють у логи | Low | High | Medium | Log inspection |
 | Незначна затримка callback | Medium | Low | Low | Retry behavior |
 | Некритична різниця в тексті validation error | Medium | Low | Low | Contract validation |
-
